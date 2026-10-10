@@ -45,5 +45,10 @@ def merge_employees(timesheet: pd.DataFrame, employees: pd.DataFrame) -> pd.Data
     timesheet on the left, or `how="right"` with the frames swapped, both say
     "keep the timesheet's side" — pick whichever reads best to you.)
     """
-    # TODO: your code here
-    pass
+    # Rule 1: every timesheet row survives, even an unknown employee_id
+    #         -> the timesheet is the LEFT frame, so how="left"
+    # Rule 2: rostered people who didn't work don't appear
+    #         -> a left merge only takes matches from the right, so this is automatic
+    # Unmatched IDs (like E099) get NaN in the roster columns; Step 3 labels them.
+    # The default how="inner" would silently drop E099, so always spell out how=.
+    return pd.merge(timesheet, employees, on="employee_id", how="left")

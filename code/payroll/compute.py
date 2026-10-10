@@ -34,8 +34,17 @@ def calc_gross_pay(hours: float, rate: float) -> float:
         calc_gross_pay(0.75, 17.0)   ->  12.75
         calc_gross_pay(20.0, float("nan"))  ->  0.0
     """
-    # TODO: your code here
-    pass
+    # No rate (unknown employee_id) -> pay nothing; pd.isna handles NaN and None
+    if pd.isna(rate):
+        return 0.0
+
+    # Split the week: hours up to 40 are regular, hours past 40 are overtime.
+    # Exactly 40 is not overtime, so overtime_hours is 0 in that case.
+    regular_hours = min(hours, OVERTIME_THRESHOLD)
+    overtime_hours = max(hours - OVERTIME_THRESHOLD, 0.0)
+
+    pay = regular_hours * rate + overtime_hours * rate * OVERTIME_MULTIPLIER
+    return round(pay, 2)  # to the cent
 
 
 def classify_pay(hours: float, rate: float) -> str:
@@ -48,8 +57,13 @@ def classify_pay(hours: float, rate: float) -> str:
     Check for unmatched *first*: an unknown employee with 45 hours is still
     unmatched, not overtime.
     """
-    # TODO: your code here
-    pass
+    # Unmatched wins, so it is checked first
+    if pd.isna(rate):
+        return "unmatched"
+    # Strictly more than 40; exactly 40 is regular
+    if hours > OVERTIME_THRESHOLD:
+        return "overtime"
+    return "regular"
 
 
 def add_gross_pay(payroll: pd.DataFrame) -> pd.DataFrame:
@@ -60,14 +74,23 @@ def add_gross_pay(payroll: pd.DataFrame) -> pd.DataFrame:
 
         lambda row: calc_gross_pay(row["hours_worked"], row["hourly_rate_usd"])
     """
-    # TODO: your code here
-    pass
+    out = payroll.copy()  # never touch the caller's frame
+    # axis=1 -> the lambda gets one ROW at a time, indexed by column name
+    out["gross_pay"] = out.apply(
+        lambda row: calc_gross_pay(row["hours_worked"], row["hourly_rate_usd"]),
+        axis=1,
+    )
+    return out
 
 
 def add_pay_type(payroll: pd.DataFrame) -> pd.DataFrame:
     """Return a copy with one new column, `pay_type`: `classify_pay` for every row."""
-    # TODO: your code here
-    pass
+    out = payroll.copy()  # never touch the caller's frame
+    out["pay_type"] = out.apply(
+        lambda row: classify_pay(row["hours_worked"], row["hourly_rate_usd"]),
+        axis=1,
+    )
+    return out
 
 
 def build_payroll(timesheet: pd.DataFrame, employees: pd.DataFrame) -> pd.DataFrame:
@@ -78,8 +101,15 @@ def build_payroll(timesheet: pd.DataFrame, employees: pd.DataFrame) -> pd.DataFr
     pipeline computes (`hours_worked`, `hourly_rate_usd`, `gross_pay`, `pay_type`)
     and the roster's columns — one row per timesheet row.
     """
-    # TODO: your code here
-    pass
+    # Step 1: clean both frames (each adds a new column)
+    clean_timesheet = add_hours_worked(timesheet)
+    clean_employees = add_hourly_rate(employees)
+    # Step 2: left merge, so every timesheet row survives
+    payroll = merge_employees(clean_timesheet, clean_employees)
+    # Step 3: compute pay, then label each row
+    payroll = add_gross_pay(payroll)
+    payroll = add_pay_type(payroll)
+    return payroll
 
 
 def payroll_export(payroll: pd.DataFrame) -> pd.DataFrame:
@@ -98,5 +128,17 @@ def payroll_export(payroll: pd.DataFrame) -> pd.DataFrame:
     pipeline's columns. The pipeline table keeps its lineage; the export is a
     view of it shaped for someone else's system.
     """
-    # TODO: your code here
-    pass
+    # Boolean index: keep only the rows the provider will accept
+    payable = payroll[payroll["pay_type"] != "unmatched"]
+
+    # A NEW frame with the provider's column names (no .rename on the pipeline's)
+    export = pd.DataFrame(
+        {
+            "payrolldate": payable["payroll_date"],
+            "employeeid": payable["employee_id"],
+            "hours": payable["hours_worked"],
+            "rate": payable["hourly_rate_usd"],
+            "total": payable["gross_pay"],
+        }
+    )
+    return export
